@@ -2,44 +2,53 @@ using UnityEngine;
 using System.Collections;
 
 public class DisasterSystem : MonoBehaviour {
-    [SerializeField] float disasterInterval = 60f;
-    [SerializeField] GameObject[] disasterPrefabs;
-    [SerializeField] float spawnDistance = 15f;
-    [SerializeField] float spawnRange = 10f;
+    [SerializeField] float disasterInterval = 30f;
+    [SerializeField] float spawnRange = 3f;
 
     IEnumerator Start() {
-        while(true) {
+        while (true) {
             yield return new WaitForSeconds(disasterInterval);
-            TriggerRandomDisaster();
+            SpawnMeteor();
         }
     }
 
-    void TriggerRandomDisaster() {
-        if(disasterPrefabs.Length == 0) return;
-        
-        int type = Random.Range(0, disasterPrefabs.Length);
-        Vector2 spawnPos = GetSpawnPosition();
-        Instantiate(disasterPrefabs[type], spawnPos, Quaternion.identity);
+    void SpawnMeteor() {
+        Vector2 pos = GetOffScreenSpawnPosition();
+
+        GameObject go = new GameObject("Meteor");
+        go.transform.position = pos;
+        go.transform.localScale = Vector3.one * 1.5f;
+
+        SpriteRenderer sr = go.AddComponent<SpriteRenderer>();
+        sr.sprite = GameManager.MakeCircleSprite();
+        sr.color = new Color(1f, 0.4f, 0.1f);
+        sr.sortingOrder = 5;
+
+        CircleCollider2D col = go.AddComponent<CircleCollider2D>();
+        col.radius = 0.5f;
+
+        Rigidbody2D rb = go.AddComponent<Rigidbody2D>();
+        rb.gravityScale = 0f;
+        rb.mass = 5f;
+
+        go.AddComponent<Meteor>();
+        Debug.Log($"[DisasterSystem] 触发灾害: Meteor at {pos}");
     }
 
-    // 新增的GetSpawnPosition方法
-    Vector2 GetSpawnPosition() {
+    Vector2 GetOffScreenSpawnPosition() {
         Camera cam = Camera.main;
-        if(!cam) return Vector2.zero;
+        if (!cam) return Vector2.zero;
 
-        // 计算屏幕外生成位置
-        Vector2 viewportEdge = Random.value > 0.5f 
-            ? new Vector2(Random.value, Random.Range(0, 2)) 
-            : new Vector2(Random.Range(0, 2), Random.value);
-        
-        viewportEdge.y = viewportEdge.y > 1 ? 1.1f : -0.1f;
-        viewportEdge.x = viewportEdge.x > 1 ? 1.1f : -0.1f;
-        
-        Vector2 worldPos = cam.ViewportToWorldPoint(viewportEdge);
-        
-        // 添加随机偏移
+        int edge = Random.Range(0, 4); // 0=上 1=下 2=左 3=右
+        Vector2 viewportPos = edge switch {
+            0 => new Vector2(Random.value, 1.1f),
+            1 => new Vector2(Random.value, -0.1f),
+            2 => new Vector2(-0.1f, Random.value),
+            _ => new Vector2(1.1f, Random.value),
+        };
+
+        Vector2 worldPos = cam.ViewportToWorldPoint(viewportPos);
         worldPos += Random.insideUnitCircle * spawnRange;
-        
         return worldPos;
     }
 }
