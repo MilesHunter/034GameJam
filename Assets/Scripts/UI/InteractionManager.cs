@@ -3,20 +3,46 @@ using UnityEngine;
 public class InteractionManager : MonoBehaviour {
     public static InteractionManager Instance;
 
+    enum BuildTool { Stick, Ball, Select }
+
+    BuildTool currentTool = BuildTool.Stick;
+    int currentStickLength = 2;
+
     Stick stickBeingPlaced;
 
     Stick pendingStick;
+    AllocatableBall pendingBall;
     Vector2 pendingMouseDownWorld;
     bool pendingLeftDown;
 
     Stick manipulatingStick;
     bool isManipulating;
 
+    AllocatableBall selectedBall;
+    Stick selectedStick;
+
     public bool IsPlacingStick => stickBeingPlaced != null;
     public bool IsManipulatingStick => isManipulating;
 
+    public int CurrentStickLength => currentStickLength;
+
     void Awake() {
         Instance = this;
+    }
+
+    public void SetStickTool(int length) {
+        currentTool = BuildTool.Stick;
+        currentStickLength = Mathf.Max(1, length);
+        ClearSelection();
+    }
+
+    public void SetBallTool() {
+        currentTool = BuildTool.Ball;
+        ClearSelection();
+    }
+
+    public void SetSelectTool() {
+        currentTool = BuildTool.Select;
     }
 
     void Update() {
@@ -25,6 +51,10 @@ public class InteractionManager : MonoBehaviour {
                 return;
             if (GameManager.Instance.Phase != GameManager.GamePhase.Build)
                 return;
+        }
+
+        if (Input.GetKeyDown(KeyCode.X)) {
+            TryDeleteSelection();
         }
 
         var warehouse = WarehouseUI.Instance;
@@ -68,7 +98,6 @@ public class InteractionManager : MonoBehaviour {
             }
 
             if (Input.GetMouseButtonUp(0)) {
-                GameManager.Instance?.AutoSpawnBallOnStickFreeEnd(manipulatingStick);
                 manipulatingStick.EndManipulation();
                 manipulatingStick = null;
                 isManipulating = false;
@@ -115,15 +144,39 @@ public class InteractionManager : MonoBehaviour {
         Collider2D[] hits = Physics2D.OverlapPointAll(mouse);
 
         pendingStick = null;
+        pendingBall = null;
         foreach (var col in hits) {
             if (pendingStick == null) pendingStick = col.GetComponent<Stick>();
+            if (pendingBall == null) pendingBall = col.GetComponent<AllocatableBall>();
         }
     }
 
     void UpdatePendingLeftPointer() {
         if (Input.GetMouseButtonUp(0)) {
             pendingLeftDown = false;
+            var gm = GameManager.Instance;
+            if (gm == null)
+                return;
 
+            if (currentTool == BuildTool.Ball) {
+                TryInstallBallAtPosition(pendingMouseDownWorld);
+                return;
+            }
+
+            if (currentTool == BuildTool.Select) {
+                if (pendingStick != null) {
+                    SetSelection(pendingStick);
+                    return;
+                }
+                if (pendingBall != null) {
+                    SetSelection(pendingBall);
+                    return;
+                }
+                ClearSelection();
+                return;
+            }
+
+            // Stick 工具：点击棒=操作棒；否则以最近球为锚点生成新棒
             if (pendingStick != null) {
                 manipulatingStick = pendingStick;
                 if (manipulatingStick.CanDrag) {
@@ -136,15 +189,11 @@ public class InteractionManager : MonoBehaviour {
                 return;
             }
 
-            var gm = GameManager.Instance;
-            if (gm == null)
-                return;
-
             Ball anchor = gm.FindNearestBall(pendingMouseDownWorld);
             if (anchor == null)
                 return;
 
-            Stick s = gm.SpawnRandomStick(anchor);
+            Stick s = gm.SpawnStick(anchor, currentStickLength);
             if (s != null)
                 stickBeingPlaced = s;
             return;
@@ -158,6 +207,9 @@ public class InteractionManager : MonoBehaviour {
 
         pendingLeftDown = false;
 
+        if (currentTool != BuildTool.Stick)
+            return;
+
         manipulatingStick = pendingStick;
         if (manipulatingStick.CanDrag) {
             manipulatingStick.BeginDrag(pendingMouseDownWorld);
@@ -166,5 +218,110 @@ public class InteractionManager : MonoBehaviour {
             manipulatingStick.BeginRotate();
             isManipulating = true;
         }
+    }
+
+    void TryInstallBallAtPosition(Vector2 mouseWorld) {
+        var gm = GameManager.Instance;
+        if (gm == null)
+            return;
+
+        float maxDistSqr = 0.16f; // 半径约 0.4
+        Stick bestStick = null;
+        Transform bestEnd = null;
+
+        foreach (Stick stick in FindObjectsByType<Stick>(FindObjectsSortMode.None)) {
+            if (stick == null) continue;
+            foreach (Transform end in stick.GetFreeEnds()) {
+                if (end == null) continue;
+                float d2 = ((Vector2)end.position - mouseWorld).sqrMagnitude;
+                if (d2 < maxDistSqr) {
+                    maxDistSqr = d2;
+                    bestStick = stick;
+                    bestEnd = end;
+                }
+            }
+        }
+
+        if (bestStick == null || bestEnd == null)
+            return;
+
+        gm.TryInstallBallOnStickFreeEnd(bestStick);
+    }
+
+    void TryDeleteSelection() {
+        if (stickBeingPlaced != null || isManipulating)
+            return;
+
+        var gm = GameManager.Instance;
+
+        if (selectedBall != null) {
+            if (gm != null)
+                gm.ReturnAllocatableBall();
+            selectedBall.Delete();
+            ClearSelection();
+            return;
+        }
+
+        if (selectedStick != null) {
+            if (gm != null)
+                gm.ReturnStick();
+            selectedStick.Delete();
+            ClearSelection();
+        }
+    }
+
+    void SetSelection(AllocatableBall ball) {
+        if (selectedBall != null) {
+            var outline = selectedBall.GetComponent<SelectableOutline>();
+            outline?.SetSelected(false);
+        }
+        if (selectedStick != null) {
+            var outline = selectedStick.GetComponent<SelectableOutline>();
+            outline?.SetSelected(false);
+        }
+
+        selectedBall = ball;
+        selectedStick = null;
+        if (ball == null) {
+            ClearSelection();
+            return;
+        }
+        var selectedOutline = ball.GetComponent<SelectableOutline>();
+        selectedOutline?.SetSelected(true);
+    }
+
+    void SetSelection(Stick stick) {
+        if (selectedBall != null) {
+            var outline = selectedBall.GetComponent<SelectableOutline>();
+            outline?.SetSelected(false);
+        }
+        if (selectedStick != null) {
+            var outline = selectedStick.GetComponent<SelectableOutline>();
+            outline?.SetSelected(false);
+        }
+
+        selectedStick = stick;
+        selectedBall = null;
+        if (stick == null) {
+            ClearSelection();
+            return;
+        }
+        var selectedOutline = stick.GetComponent<SelectableOutline>();
+        selectedOutline?.SetSelected(true);
+    }
+
+    void ClearSelection() {
+        if (selectedBall != null) {
+            var outlineBall = selectedBall.GetComponent<SelectableOutline>();
+            outlineBall?.SetSelected(false);
+        }
+
+        if (selectedStick != null) {
+            var outlineStick = selectedStick.GetComponent<SelectableOutline>();
+            outlineStick?.SetSelected(false);
+        }
+
+        selectedBall = null;
+        selectedStick = null;
     }
 }

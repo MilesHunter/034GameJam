@@ -29,8 +29,8 @@ public class ProductionBall : Ball {
         while (connectedToInitial) {
             yield return new WaitForSeconds(productionInterval);
             if (connectedToInitial && GameManager.Instance != null) {
-                GameManager.Instance.allocatableBallCount += ballOutput;
-                GameManager.Instance.stickCount += stickOutput;
+                GameManager.Instance.AddAllocatableBalls(ballOutput);
+                GameManager.Instance.AddGenericSticks(stickOutput);
                 Debug.Log($"[ProductionBall] 产出 {ballOutput} 球, {stickOutput} 棒");
             }
         }

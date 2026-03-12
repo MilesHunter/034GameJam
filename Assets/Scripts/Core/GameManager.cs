@@ -62,7 +62,7 @@ public class GameManager : MonoBehaviour {
     void TickStickRefresh() {
         stickRefreshTimer -= Time.deltaTime;
         if (stickRefreshTimer > 0f) return;
-        stickCount += 1;
+        AddGenericSticks(1);
         ResetStickRefreshTimer();
     }
 
@@ -70,6 +70,53 @@ public class GameManager : MonoBehaviour {
         float min = Mathf.Max(0.1f, stickRefreshMinSeconds);
         float max = Mathf.Max(min, stickRefreshMaxSeconds);
         stickRefreshTimer = Random.Range(min, max);
+    }
+
+    // ----------------------------------------------------------------
+    // 资源辅助方法：统一管理库存并在存在 Backpack 时同步
+    // ----------------------------------------------------------------
+
+    public void AddAllocatableBalls(int amount) {
+        if (amount == 0) return;
+        allocatableBallCount += amount;
+        if (Backpack.Instance != null && amount > 0)
+            Backpack.Instance.AddBalls(amount);
+    }
+
+    public bool TryConsumeAllocatableBalls(int amount) {
+        if (amount <= 0) return true;
+        if (allocatableBallCount < amount)
+            return false;
+        allocatableBallCount -= amount;
+        if (Backpack.Instance != null)
+            Backpack.Instance.TryConsumeBalls(amount);
+        return true;
+    }
+
+    public void AddGenericSticks(int amount) {
+        if (amount == 0) return;
+        stickCount += amount;
+
+        if (Backpack.Instance != null && amount > 0) {
+            int defaultLength = GetDefaultStickLength();
+            if (defaultLength > 0)
+                Backpack.Instance.AddSticks(defaultLength, amount);
+        }
+    }
+
+    public bool TryConsumeGenericStick() {
+        if (stickCount <= 0) return false;
+        stickCount--;
+        return true;
+    }
+
+    int GetDefaultStickLength() {
+        if (availableStickLengths == null || availableStickLengths.Count == 0)
+            return 1;
+        int min = availableStickLengths[0];
+        for (int i = 1; i < availableStickLengths.Count; i++)
+            if (availableStickLengths[i] < min) min = availableStickLengths[i];
+        return min > 0 ? min : 1;
     }
 
     public void SetPhysicsPaused(bool paused) {
@@ -171,6 +218,9 @@ public class GameManager : MonoBehaviour {
         stickWarehouse.TryGetValue(length, out current);
         stickWarehouse[length] = current + 1;
 
+        if (Backpack.Instance != null)
+            Backpack.Instance.AddSticks(length, 1);
+
         stick.Delete();
     }
 
@@ -196,6 +246,9 @@ public class GameManager : MonoBehaviour {
         if (count <= 0) stickWarehouse.Remove(length);
         else stickWarehouse[length] = count;
 
+        if (Backpack.Instance != null)
+            Backpack.Instance.TryConsumeStick(length);
+
         GameObject go = new GameObject($"WarehouseStick_L{length}");
         go.transform.position = spawnPos;
         go.transform.localScale = new Vector3(0.3f, length, 1f);
@@ -204,6 +257,8 @@ public class GameManager : MonoBehaviour {
         sr.sprite = MakeRectSprite();
         sr.color = new Color(0.6f, 0.6f, 0.9f);
         sr.sortingOrder = 1;
+        go.AddComponent<SelectableOutline>();
+        go.AddComponent<SelectableOutline>();
 
         BoxCollider2D col = go.AddComponent<BoxCollider2D>();
         col.size = Vector2.one;
@@ -264,8 +319,11 @@ public class GameManager : MonoBehaviour {
     // ----------------------------------------------------------------
     // 返回处于放置模式的 Stick；若库存不足则返回 null
     public Stick SpawnStick(Ball anchorBall, int length) {
-        if (stickCount <= 0) return null;
-        stickCount--;
+        if (!TryConsumeGenericStick())
+            return null;
+
+        if (Backpack.Instance != null)
+            Backpack.Instance.TryConsumeStick(length);
 
         GameObject go = new GameObject($"Stick_L{length}");
         go.transform.position = anchorBall.transform.position;
@@ -456,8 +514,8 @@ public class GameManager : MonoBehaviour {
     // ----------------------------------------------------------------
     public bool SpawnAllocatableBall(Stick stick) {
         Transform freeEnd = stick.FreeEnd;
-        if (freeEnd == null || allocatableBallCount <= 0) return false;
-        allocatableBallCount--;
+        if (freeEnd == null) return false;
+        if (!TryConsumeAllocatableBalls(1)) return false;
 
         Vector2 spawnPos = (Vector2)freeEnd.position + Vector2.up * 0.3f;
 
@@ -486,11 +544,52 @@ public class GameManager : MonoBehaviour {
         return true;
     }
 
+    /// <summary>
+    /// 在棒子的自由端安装一个新的可分配球，并消耗一个球库存。
+    /// 返回是否安装成功（例如库存不足或无自由端时返回 false）。
+    /// </summary>
+    public bool TryInstallBallOnStickFreeEnd(Stick stick) {
+        if (stick == null) return false;
+        Transform freeEnd = stick.FreeEnd;
+        if (freeEnd == null) return false;
+
+        if (!TryConsumeAllocatableBalls(1))
+            return false;
+
+        GameObject go = new GameObject("AllocatableBall");
+        go.transform.position = freeEnd.position;
+        go.layer = LayerMask.NameToLayer("Ball");
+        go.transform.localScale = Vector3.one * 0.6f;
+
+        SpriteRenderer sr = go.AddComponent<SpriteRenderer>();
+        sr.sprite = MakeCircleSprite();
+        sr.color = new Color(0.9f, 0.5f, 0.5f);
+        sr.sortingOrder = 1;
+
+        CircleCollider2D col = go.AddComponent<CircleCollider2D>();
+        col.radius = 0.15f;
+
+        Rigidbody2D rb = go.AddComponent<Rigidbody2D>();
+        rb.mass = 0.5f;
+        rb.gravityScale = 1f;
+        rb.drag = 0.2f;
+        rb.angularDrag = 0.5f;
+
+        go.AddComponent<SelectableOutline>();
+        AllocatableBall ball = go.AddComponent<AllocatableBall>();
+        ball.isFixed = false;
+        ball.connectionLimit = 24;
+
+        stick.AttachToFreeEnd(ball);
+        return true;
+    }
+
     // ----------------------------------------------------------------
     // 库存归还
     // ----------------------------------------------------------------
-    public void ReturnStick() => stickCount++;
-    public void ReturnAllocatableBall() => allocatableBallCount++;
+    public void ReturnStick() => AddGenericSticks(1);
+
+    public void ReturnAllocatableBall() => AddAllocatableBalls(1);
 
     // ----------------------------------------------------------------
     // 程序化 Sprite（运行时）
