@@ -70,6 +70,14 @@ public class InteractionManager : MonoBehaviour {
                 stickBeingPlaced = null;
 
                 if (s != null) {
+                    // 在确认放置前，先检查是否与地图墙体冲突
+                    if (s.IsPlacementBlockedByWalls()) {
+                        // 视为本次放置无效：销毁棒子并归还库存
+                        s.CancelPlacement();
+                        GameManager.Instance?.ReturnStick();
+                        return;
+                    }
+
                     s.ConfirmPlacementPose();
 
                     Ball anchor = s.endpointA != null ? s.endpointA : s.endpointB;

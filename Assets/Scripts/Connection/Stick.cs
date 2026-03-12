@@ -176,6 +176,29 @@ public class Stick : MonoBehaviour {
         placementAnchor = null;
     }
 
+    /// <summary>
+    /// 当前摆放姿态是否被地图中的墙体阻挡。
+    /// 规则：如果任意端点位于阻止建造的 MapWall 内部，则视为非法放置。
+    /// 如果场景中没有配置 MapWall（或没有 "MapWall" Layer），则始终视为合法。
+    /// </summary>
+    public bool IsPlacementBlockedByWalls() {
+        // 若端点尚未初始化，则不做限制
+        bool hasEndA = endA != null;
+        bool hasEndB = endB != null;
+
+        if (!hasEndA && !hasEndB)
+            return false;
+
+        // 依赖 MapWall 提供的静态检测方法
+        if (hasEndA && MapWall.IsPointBlocked(endA.position))
+            return true;
+
+        if (hasEndB && MapWall.IsPointBlocked(endB.position))
+            return true;
+
+        return false;
+    }
+
     public void FinishPlacement() {
         isBeingPlaced = false;
         placementAnchor = null;
