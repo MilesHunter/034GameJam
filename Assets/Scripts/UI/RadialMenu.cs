@@ -13,6 +13,7 @@ public class RadialMenu : MonoBehaviour {
     Canvas canvas;
     RectTransform root;
     readonly List<Button> buttons = new List<Button>();
+    Image background;
 
     struct ItemConfig {
         public ItemType type;
@@ -60,6 +61,19 @@ public class RadialMenu : MonoBehaviour {
         root.pivot = new Vector2(0.5f, 0.5f);
         root.anchoredPosition = Vector2.zero;
         root.sizeDelta = new Vector2(radius * 2f + iconSize, radius * 2f + iconSize);
+
+        GameObject bgGo = new GameObject("Background");
+        bgGo.transform.SetParent(root, false);
+        background = bgGo.AddComponent<Image>();
+        background.sprite = GameManager.MakeCircleSprite();
+        background.color = new Color(0f, 0f, 0f, 0.4f);
+        RectTransform bgRt = bgGo.GetComponent<RectTransform>();
+        bgRt.anchorMin = new Vector2(0.5f, 0.5f);
+        bgRt.anchorMax = new Vector2(0.5f, 0.5f);
+        bgRt.pivot = new Vector2(0.5f, 0.5f);
+        bgRt.anchoredPosition = Vector2.zero;
+        float bgSize = radius * 2f + iconSize * 1.5f;
+        bgRt.sizeDelta = new Vector2(bgSize, bgSize);
     }
 
     void BuildItemsFromGameState() {
@@ -87,6 +101,9 @@ public class RadialMenu : MonoBehaviour {
     }
 
     void BuildButtons() {
+        if (background != null)
+            background.transform.SetAsFirstSibling();
+
         foreach (var btn in buttons) {
             if (btn != null)
                 Destroy(btn.gameObject);

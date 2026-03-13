@@ -13,6 +13,10 @@ public class GameManager : MonoBehaviour {
     [Header("Resources")]
     public int allocatableBallCount = 5;
     public int stickCount = 10;
+
+    [Tooltip("初始可用的连接棒长度列表；若为空则回退到单个长度 2。RadialMenu 和 BuildToolbar 会基于此构建选项。")]
+    [SerializeField] int[] initialStickLengths = new int[] { 2, 4, 6 };
+
     public List<int> availableStickLengths = new List<int>();
 
     readonly Dictionary<int, int> stickWarehouse = new Dictionary<int, int>();
@@ -30,10 +34,33 @@ public class GameManager : MonoBehaviour {
     [Header("References")]
     public InitialBall initialBall;
 
+    [System.Serializable]
+    public class StickPrefabConfig {
+        public int length;
+        public Stick prefab;
+    }
+
+    [Header("Prefabs")]
+    [SerializeField] StickPrefabConfig[] stickPrefabs;
+
+    [Tooltip("可分配连接球预制体（必须带有 AllocatableBall、Collider、SpriteRenderer 等）。为空时使用代码临时生成。")]
+    [SerializeField] AllocatableBall allocatableBallPrefab;
+
     void Awake() {
         Instance = this;
-        if (availableStickLengths.Count == 0)
-            availableStickLengths.Add(2);
+
+        if (availableStickLengths.Count == 0) {
+            if (initialStickLengths != null && initialStickLengths.Length > 0) {
+                foreach (int len in initialStickLengths) {
+                    if (len <= 0) continue;
+                    if (!availableStickLengths.Contains(len))
+                        availableStickLengths.Add(len);
+                }
+            }
+
+            if (availableStickLengths.Count == 0)
+                availableStickLengths.Add(2);
+        }
 
         allocatableBallCount = Mathf.Clamp(allocatableBallCount, 0, MaxInventoryPerItem);
         stickCount = Mathf.Clamp(stickCount, 0, MaxInventoryPerItem);
@@ -256,6 +283,14 @@ public class GameManager : MonoBehaviour {
         if (Backpack.Instance != null)
             Backpack.Instance.TryConsumeStick(length);
 
+        Stick prefabInstanceForLength = GetStickPrefabForLength(length);
+        if (prefabInstanceForLength != null) {
+            Stick instance = Instantiate(prefabInstanceForLength, spawnPos, Quaternion.identity);
+            instance.gameObject.name = $"WarehouseStick_L{length}";
+            stick = instance;
+            return true;
+        }
+
         GameObject go = new GameObject($"WarehouseStick_L{length}");
         go.transform.position = spawnPos;
         go.transform.localScale = new Vector3(0.3f, length, 1f);
@@ -332,6 +367,18 @@ public class GameManager : MonoBehaviour {
         if (Backpack.Instance != null)
             Backpack.Instance.TryConsumeStick(length);
 
+        Stick prefabInstanceForLength = GetStickPrefabForLength(length);
+        if (prefabInstanceForLength != null) {
+            Vector3 pos = anchorBall != null
+                ? anchorBall.transform.position
+                : Vector3.zero;
+
+            Stick instance = Instantiate(prefabInstanceForLength, pos, Quaternion.identity);
+            instance.gameObject.name = $"Stick_L{length}";
+            instance.StartPlacement(anchorBall);
+            return instance;
+        }
+
         GameObject go = new GameObject($"Stick_L{length}");
         go.transform.position = anchorBall.transform.position;
         go.transform.localScale = new Vector3(0.3f, length, 1f);
@@ -372,6 +419,17 @@ public class GameManager : MonoBehaviour {
         if (availableStickLengths == null || availableStickLengths.Count == 0) return null;
         int len = availableStickLengths[Random.Range(0, availableStickLengths.Count)];
         return SpawnStick(anchorBall, len);
+    }
+
+    Stick GetStickPrefabForLength(int length) {
+        if (stickPrefabs == null)
+            return null;
+        for (int i = 0; i < stickPrefabs.Length; i++) {
+            var cfg = stickPrefabs[i];
+            if (cfg != null && cfg.prefab != null && cfg.length == length)
+                return cfg.prefab;
+        }
+        return null;
     }
 
     public Ball FindNearestBall(Vector2 mousePos, float maxDistance = 2.5f) {
@@ -447,27 +505,33 @@ public class GameManager : MonoBehaviour {
 
         Vector2 spawnPos = ((Vector2)freeEnd.position + (Vector2)bestEnd.position) * 0.5f;
 
-        GameObject go = new GameObject("AutoBall");
-        go.transform.position = spawnPos;
-        go.layer = LayerMask.NameToLayer("Ball");
-        go.transform.localScale = Vector3.one * 0.8f;
+        AllocatableBall ball;
+        if (Instance != null && Instance.allocatableBallPrefab != null) {
+            ball = Instantiate(Instance.allocatableBallPrefab, spawnPos, Quaternion.identity);
+        } else {
+            GameObject go = new GameObject("AutoBall");
+            go.transform.position = spawnPos;
+            go.layer = LayerMask.NameToLayer("Ball");
+            go.transform.localScale = Vector3.one * 0.8f;
 
-        SpriteRenderer sr = go.AddComponent<SpriteRenderer>();
-        sr.sprite = MakeCircleSprite();
-        sr.color = new Color(0.9f, 0.5f, 0.5f);
-        sr.sortingOrder = 1;
+            SpriteRenderer sr = go.AddComponent<SpriteRenderer>();
+            sr.sprite = MakeCircleSprite();
+            sr.color = new Color(0.9f, 0.5f, 0.5f);
+            sr.sortingOrder = 1;
 
-        CircleCollider2D col = go.AddComponent<CircleCollider2D>();
-        col.radius = 0.15f;
+            CircleCollider2D col = go.AddComponent<CircleCollider2D>();
+            col.radius = 0.15f;
 
-        AllocatableBall ball = go.AddComponent<AllocatableBall>();
-        ball.isFixed = false;
-        ball.connectionLimit = 24;
+            ball = go.AddComponent<AllocatableBall>();
+            ball.isFixed = false;
+            ball.connectionLimit = 24;
+        }
 
         bool attachedA = stick.AttachAtEnd(freeEnd, ball);
         bool attachedB = bestStick.AttachAtEnd(bestEnd, ball);
         if (!attachedA || !attachedB) {
-            Destroy(go);
+            if (ball != null)
+                Destroy(ball.gameObject);
             return false;
         }
 
@@ -496,22 +560,27 @@ public class GameManager : MonoBehaviour {
         if (TryAttachFreeEndToNearbyStickEnd(stick, freeEnd))
             return;
 
-        GameObject go = new GameObject("AutoBall");
-        go.transform.position = freeEnd.position;
-        go.layer = LayerMask.NameToLayer("Ball");
-        go.transform.localScale = Vector3.one * 0.6f;
+        AllocatableBall ball;
+        if (Instance != null && Instance.allocatableBallPrefab != null) {
+            ball = Instantiate(Instance.allocatableBallPrefab, freeEnd.position, Quaternion.identity);
+        } else {
+            GameObject go = new GameObject("AutoBall");
+            go.transform.position = freeEnd.position;
+            go.layer = LayerMask.NameToLayer("Ball");
+            go.transform.localScale = Vector3.one * 0.6f;
 
-        SpriteRenderer sr = go.AddComponent<SpriteRenderer>();
-        sr.sprite = MakeCircleSprite();
-        sr.color = new Color(0.9f, 0.5f, 0.5f);
-        sr.sortingOrder = 1;
+            SpriteRenderer sr = go.AddComponent<SpriteRenderer>();
+            sr.sprite = MakeCircleSprite();
+            sr.color = new Color(0.9f, 0.5f, 0.5f);
+            sr.sortingOrder = 1;
 
-        CircleCollider2D col = go.AddComponent<CircleCollider2D>();
-        col.radius = 0.15f;
+            CircleCollider2D col = go.AddComponent<CircleCollider2D>();
+            col.radius = 0.15f;
 
-        AllocatableBall ball = go.AddComponent<AllocatableBall>();
-        ball.isFixed = false;
-        ball.connectionLimit = 24;
+            ball = go.AddComponent<AllocatableBall>();
+            ball.isFixed = false;
+            ball.connectionLimit = 24;
+        }
 
         stick.AttachToFreeEnd(ball);
     }
@@ -525,6 +594,11 @@ public class GameManager : MonoBehaviour {
         if (!TryConsumeAllocatableBalls(1)) return false;
 
         Vector2 spawnPos = (Vector2)freeEnd.position + Vector2.up * 0.3f;
+
+        if (allocatableBallPrefab != null) {
+            Instantiate(allocatableBallPrefab, spawnPos, Quaternion.identity);
+            return true;
+        }
 
         GameObject go = new GameObject("AllocatableBall");
         go.transform.position = spawnPos;
@@ -563,29 +637,34 @@ public class GameManager : MonoBehaviour {
         if (!TryConsumeAllocatableBalls(1))
             return false;
 
-        GameObject go = new GameObject("AllocatableBall");
-        go.transform.position = freeEnd.position;
-        go.layer = LayerMask.NameToLayer("Ball");
-        go.transform.localScale = Vector3.one * 0.6f;
+        AllocatableBall ball;
+        if (allocatableBallPrefab != null) {
+            ball = Instantiate(allocatableBallPrefab, freeEnd.position, Quaternion.identity);
+        } else {
+            GameObject go = new GameObject("AllocatableBall");
+            go.transform.position = freeEnd.position;
+            go.layer = LayerMask.NameToLayer("Ball");
+            go.transform.localScale = Vector3.one * 0.6f;
 
-        SpriteRenderer sr = go.AddComponent<SpriteRenderer>();
-        sr.sprite = MakeCircleSprite();
-        sr.color = new Color(0.9f, 0.5f, 0.5f);
-        sr.sortingOrder = 1;
+            SpriteRenderer sr = go.AddComponent<SpriteRenderer>();
+            sr.sprite = MakeCircleSprite();
+            sr.color = new Color(0.9f, 0.5f, 0.5f);
+            sr.sortingOrder = 1;
 
-        CircleCollider2D col = go.AddComponent<CircleCollider2D>();
-        col.radius = 0.15f;
+            CircleCollider2D col = go.AddComponent<CircleCollider2D>();
+            col.radius = 0.15f;
 
-        Rigidbody2D rb = go.AddComponent<Rigidbody2D>();
-        rb.mass = 0.5f;
-        rb.gravityScale = 1f;
-        rb.drag = 0.2f;
-        rb.angularDrag = 0.5f;
+            Rigidbody2D rb = go.AddComponent<Rigidbody2D>();
+            rb.mass = 0.5f;
+            rb.gravityScale = 1f;
+            rb.drag = 0.2f;
+            rb.angularDrag = 0.5f;
 
-        go.AddComponent<SelectableOutline>();
-        AllocatableBall ball = go.AddComponent<AllocatableBall>();
-        ball.isFixed = false;
-        ball.connectionLimit = 24;
+            go.AddComponent<SelectableOutline>();
+            ball = go.AddComponent<AllocatableBall>();
+            ball.isFixed = false;
+            ball.connectionLimit = 24;
+        }
 
         stick.AttachToFreeEnd(ball);
         return true;
