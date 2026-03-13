@@ -8,6 +8,8 @@ using UnityEngine;
 public class Backpack : MonoBehaviour {
     public static Backpack Instance { get; private set; }
 
+    const int MaxPerItem = 256;
+
     [Header("Initial Values (optional)")]
     [SerializeField] int initialBallCount = 0;
     [SerializeField] List<int> initialStickLengths = new List<int>();
@@ -35,29 +37,28 @@ public class Backpack : MonoBehaviour {
         }
         Instance = this;
 
-        // 通过 Inspector 预设初始值（仅测试场景使用）
-        ballCount = initialBallCount;
+        ballCount = Mathf.Clamp(initialBallCount, 0, MaxPerItem);
         int count = Mathf.Min(initialStickLengths.Count, initialStickCounts.Count);
         for (int i = 0; i < count; i++) {
             int len = Mathf.Max(1, initialStickLengths[i]);
             int num = Mathf.Max(0, initialStickCounts[i]);
             if (num <= 0) continue;
             if (stickCounts.TryGetValue(len, out int existing))
-                stickCounts[len] = existing + num;
+                stickCounts[len] = Mathf.Clamp(existing + num, 0, MaxPerItem);
             else
-                stickCounts[len] = num;
+                stickCounts[len] = Mathf.Clamp(num, 0, MaxPerItem);
         }
     }
 
     public void Initialize(int initialBalls, IDictionary<int, int> initialSticks) {
-        ballCount = Mathf.Max(0, initialBalls);
+        ballCount = Mathf.Clamp(initialBalls, 0, MaxPerItem);
         stickCounts.Clear();
         if (initialSticks == null) return;
         foreach (var kv in initialSticks) {
             int len = Mathf.Max(1, kv.Key);
             int num = Mathf.Max(0, kv.Value);
             if (num <= 0) continue;
-            stickCounts[len] = num;
+            stickCounts[len] = Mathf.Clamp(num, 0, MaxPerItem);
         }
     }
 
@@ -66,7 +67,7 @@ public class Backpack : MonoBehaviour {
     // --------------------------------------------------------------------
     public void AddBalls(int amount) {
         if (amount <= 0) return;
-        ballCount += amount;
+        ballCount = Mathf.Clamp(ballCount + amount, 0, MaxPerItem);
     }
 
     /// <summary>
@@ -87,7 +88,7 @@ public class Backpack : MonoBehaviour {
         if (amount <= 0) return;
         length = Mathf.Max(1, length);
         if (!stickCounts.TryGetValue(length, out int existing)) existing = 0;
-        stickCounts[length] = existing + amount;
+        stickCounts[length] = Mathf.Clamp(existing + amount, 0, MaxPerItem);
     }
 
     /// <summary>

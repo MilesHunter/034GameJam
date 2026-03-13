@@ -35,6 +35,8 @@ public class CameraController : MonoBehaviour {
     }
 
     void HandleMouseDrag() {
+        if (RadialMenu.IsOpen)
+            return;
         if (Input.GetMouseButtonDown(1)) {
             // 放置棒子模式下右键取消放置，不启动摄像机拖拽
             if (InteractionManager.Instance != null && InteractionManager.Instance.IsPlacingStick)

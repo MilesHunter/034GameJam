@@ -3,36 +3,43 @@ using UnityEngine;
 using UnityEngine.EventSystems;
 using UnityEngine.UI;
 
-/// <summary>
-/// 建造工具栏：屏幕下方显示球与三种长度的棒子数量，并提供工具切换。
-/// - 左侧：球按钮（切换到球工具）
-/// - 右侧：三种预设长度的棒按钮（切换到对应长度的棒工具）
-/// 数量显示来自 Backpack（若存在），否则退回 GameManager 的基础字段。
-/// </summary>
 public class BuildToolbar : MonoBehaviour {
     [Header("Stick Length Presets")]
     [SerializeField] int[] stickLengths = new int[] { 2, 4, 6 };
 
+    [Header("Inventory Limit Per Item")]
+    [SerializeField] int maxPerItem = 256;
+
     Canvas canvas;
     RectTransform root;
 
-    Button selectButton;
-    Button ballButton;
-    Text ballCountText;
-
-    readonly List<Button> stickButtons = new List<Button>();
-    readonly List<Text> stickCountTexts = new List<Text>();
-
-    Color normalColor = new Color(0.2f, 0.2f, 0.2f, 0.8f);
-    Color selectedColor = new Color(0.4f, 0.4f, 0.8f, 0.9f);
+    Image ballFillImage;
+    readonly List<Image> stickFillImages = new List<Image>();
 
     void Awake() {
         EnsureEventSystem();
         CreateCanvas();
+        CreateRootAndSlots();
+    }
 
-        Font font = Font.CreateDynamicFontFromOSFont("Arial", 18);
+    void EnsureEventSystem() {
+        if (FindObjectOfType<EventSystem>() != null)
+            return;
 
-        // 底部容器
+        GameObject go = new GameObject("EventSystem");
+        go.AddComponent<EventSystem>();
+        go.AddComponent<StandaloneInputModule>();
+    }
+
+    void CreateCanvas() {
+        canvas = gameObject.AddComponent<Canvas>();
+        canvas.renderMode = RenderMode.ScreenSpaceOverlay;
+        canvas.sortingOrder = 150;
+        gameObject.AddComponent<CanvasScaler>();
+        gameObject.AddComponent<GraphicRaycaster>();
+    }
+
+    void CreateRootAndSlots() {
         GameObject rootGo = new GameObject("BuildToolbarRoot");
         rootGo.transform.SetParent(canvas.transform, false);
         root = rootGo.AddComponent<RectTransform>();
@@ -47,181 +54,103 @@ public class BuildToolbar : MonoBehaviour {
         hlg.spacing = 8f;
         hlg.padding = new RectOffset(8, 8, 4, 4);
 
-        // 选择按钮
-        CreateSelectButton(font);
-
-        // 球按钮
-        CreateBallButton(font);
-
-        // 棒按钮
+        CreateBallSlot();
         for (int i = 0; i < stickLengths.Length; i++) {
-            CreateStickButton(font, stickLengths[i]);
-        }
-
-        // 默认选中第一个棒长度
-        if (stickButtons.Count > 0) {
-            OnStickButtonClicked(0);
+            CreateStickSlot(stickLengths[i]);
         }
     }
 
-    void EnsureEventSystem() {
-        if (FindObjectOfType<EventSystem>() == null) {
-            GameObject go = new GameObject("EventSystem");
-            go.AddComponent<EventSystem>();
-            go.AddComponent<StandaloneInputModule>();
-        }
+    void CreateBallSlot() {
+        GameObject slotGo = new GameObject("BallSlot");
+        slotGo.transform.SetParent(root, false);
+        RectTransform slotRt = slotGo.AddComponent<RectTransform>();
+        slotRt.sizeDelta = new Vector2(140, 40);
+
+        GameObject iconGo = new GameObject("Icon");
+        iconGo.transform.SetParent(slotGo.transform, false);
+        Image icon = iconGo.AddComponent<Image>();
+        icon.sprite = GameManager.MakeCircleSprite();
+        icon.color = new Color(0.9f, 0.5f, 0.5f, 0.9f);
+        RectTransform iconRt = iconGo.GetComponent<RectTransform>();
+        iconRt.anchorMin = new Vector2(0f, 0.5f);
+        iconRt.anchorMax = new Vector2(0f, 0.5f);
+        iconRt.pivot = new Vector2(0.5f, 0.5f);
+        iconRt.anchoredPosition = new Vector2(20f, 0f);
+        iconRt.sizeDelta = new Vector2(24f, 24f);
+
+        GameObject barBgGo = new GameObject("BarBG");
+        barBgGo.transform.SetParent(slotGo.transform, false);
+        Image barBg = barBgGo.AddComponent<Image>();
+        barBg.color = new Color(0.15f, 0.15f, 0.15f, 0.9f);
+        RectTransform bgRt = barBgGo.GetComponent<RectTransform>();
+        bgRt.anchorMin = new Vector2(0f, 0.5f);
+        bgRt.anchorMax = new Vector2(0f, 0.5f);
+        bgRt.pivot = new Vector2(0f, 0.5f);
+        bgRt.anchoredPosition = new Vector2(40f, 0f);
+        bgRt.sizeDelta = new Vector2(90f, 8f);
+
+        GameObject barFillGo = new GameObject("BarFill");
+        barFillGo.transform.SetParent(barBgGo.transform, false);
+        Image barFill = barFillGo.AddComponent<Image>();
+        barFill.sprite = GameManager.MakeRectSprite();
+        barFill.type = Image.Type.Filled;
+        barFill.fillMethod = Image.FillMethod.Horizontal;
+        barFill.color = new Color(0.9f, 0.5f, 0.5f, 0.9f);
+        RectTransform fillRt = barFillGo.GetComponent<RectTransform>();
+        fillRt.anchorMin = new Vector2(0f, 0f);
+        fillRt.anchorMax = new Vector2(1f, 1f);
+        fillRt.offsetMin = Vector2.zero;
+        fillRt.offsetMax = Vector2.zero;
+
+        ballFillImage = barFill;
     }
 
-    void CreateCanvas() {
-        canvas = gameObject.AddComponent<Canvas>();
-        canvas.renderMode = RenderMode.ScreenSpaceOverlay;
-        canvas.sortingOrder = 150;
-        gameObject.AddComponent<CanvasScaler>();
-        gameObject.AddComponent<GraphicRaycaster>();
-    }
+    void CreateStickSlot(int length) {
+        GameObject slotGo = new GameObject($"StickSlot_L{length}");
+        slotGo.transform.SetParent(root, false);
+        RectTransform slotRt = slotGo.AddComponent<RectTransform>();
+        slotRt.sizeDelta = new Vector2(160, 40);
 
-    void CreateSelectButton(Font font) {
-        GameObject go = new GameObject("SelectButton");
-        go.transform.SetParent(root, false);
+        GameObject iconGo = new GameObject("Icon");
+        iconGo.transform.SetParent(slotGo.transform, false);
+        Image icon = iconGo.AddComponent<Image>();
+        icon.sprite = GameManager.MakeRectSprite();
+        icon.color = new Color(0.6f, 0.6f, 0.9f, 0.9f);
+        RectTransform iconRt = iconGo.GetComponent<RectTransform>();
+        iconRt.anchorMin = new Vector2(0f, 0.5f);
+        iconRt.anchorMax = new Vector2(0f, 0.5f);
+        iconRt.pivot = new Vector2(0.5f, 0.5f);
 
-        Image img = go.AddComponent<Image>();
-        img.color = normalColor;
+        float baseWidth = 20f;
+        float width = baseWidth + length * 4f;
+        iconRt.anchoredPosition = new Vector2(20f, 0f);
+        iconRt.sizeDelta = new Vector2(width, 10f);
 
-        selectButton = go.AddComponent<Button>();
-        selectButton.onClick.AddListener(OnSelectButtonClicked);
+        GameObject barBgGo = new GameObject("BarBG");
+        barBgGo.transform.SetParent(slotGo.transform, false);
+        Image barBg = barBgGo.AddComponent<Image>();
+        barBg.color = new Color(0.15f, 0.15f, 0.15f, 0.9f);
+        RectTransform bgRt = barBgGo.GetComponent<RectTransform>();
+        bgRt.anchorMin = new Vector2(0f, 0.5f);
+        bgRt.anchorMax = new Vector2(0f, 0.5f);
+        bgRt.pivot = new Vector2(0f, 0.5f);
+        bgRt.anchoredPosition = new Vector2(40f, 0f);
+        bgRt.sizeDelta = new Vector2(100f, 8f);
 
-        RectTransform rt = go.GetComponent<RectTransform>();
-        rt.sizeDelta = new Vector2(120, 40);
+        GameObject barFillGo = new GameObject("BarFill");
+        barFillGo.transform.SetParent(barBgGo.transform, false);
+        Image barFill = barFillGo.AddComponent<Image>();
+        barFill.sprite = GameManager.MakeRectSprite();
+        barFill.type = Image.Type.Filled;
+        barFill.fillMethod = Image.FillMethod.Horizontal;
+        barFill.color = new Color(0.6f, 0.6f, 0.9f, 0.9f);
+        RectTransform fillRt = barFillGo.GetComponent<RectTransform>();
+        fillRt.anchorMin = new Vector2(0f, 0f);
+        fillRt.anchorMax = new Vector2(1f, 1f);
+        fillRt.offsetMin = Vector2.zero;
+        fillRt.offsetMax = Vector2.zero;
 
-        GameObject labelGo = new GameObject("Label");
-        labelGo.transform.SetParent(go.transform, false);
-        Text txt = labelGo.AddComponent<Text>();
-        txt.font = font;
-        txt.fontSize = 18;
-        txt.alignment = TextAnchor.MiddleCenter;
-        txt.color = Color.white;
-        txt.text = "选中/X删除";
-
-        RectTransform lrt = labelGo.GetComponent<RectTransform>();
-        lrt.anchorMin = Vector2.zero;
-        lrt.anchorMax = Vector2.one;
-        lrt.offsetMin = Vector2.zero;
-        lrt.offsetMax = Vector2.zero;
-    }
-
-    void CreateBallButton(Font font) {
-        GameObject go = new GameObject("BallButton");
-        go.transform.SetParent(root, false);
-
-        Image img = go.AddComponent<Image>();
-        img.color = normalColor;
-
-        ballButton = go.AddComponent<Button>();
-        ballButton.onClick.AddListener(OnBallButtonClicked);
-
-        RectTransform rt = go.GetComponent<RectTransform>();
-        rt.sizeDelta = new Vector2(120, 40);
-
-        GameObject labelGo = new GameObject("Label");
-        labelGo.transform.SetParent(go.transform, false);
-        Text txt = labelGo.AddComponent<Text>();
-        txt.font = font;
-        txt.fontSize = 18;
-        txt.alignment = TextAnchor.MiddleCenter;
-        txt.color = Color.white;
-        txt.text = "球: 0";
-
-        RectTransform lrt = labelGo.GetComponent<RectTransform>();
-        lrt.anchorMin = Vector2.zero;
-        lrt.anchorMax = Vector2.one;
-        lrt.offsetMin = Vector2.zero;
-        lrt.offsetMax = Vector2.zero;
-
-        ballCountText = txt;
-    }
-
-    void CreateStickButton(Font font, int length) {
-        GameObject go = new GameObject($"StickButton_L{length}");
-        go.transform.SetParent(root, false);
-
-        Image img = go.AddComponent<Image>();
-        img.color = normalColor;
-
-        Button btn = go.AddComponent<Button>();
-        int index = stickButtons.Count;
-        btn.onClick.AddListener(() => OnStickButtonClicked(index));
-
-        RectTransform rt = go.GetComponent<RectTransform>();
-        rt.sizeDelta = new Vector2(140, 40);
-
-        GameObject labelGo = new GameObject("Label");
-        labelGo.transform.SetParent(go.transform, false);
-        Text txt = labelGo.AddComponent<Text>();
-        txt.font = font;
-        txt.fontSize = 18;
-        txt.alignment = TextAnchor.MiddleCenter;
-        txt.color = Color.white;
-        txt.text = $"L={length}: 0";
-
-        RectTransform lrt = labelGo.GetComponent<RectTransform>();
-        lrt.anchorMin = Vector2.zero;
-        lrt.anchorMax = Vector2.one;
-        lrt.offsetMin = Vector2.zero;
-        lrt.offsetMax = Vector2.zero;
-
-        stickButtons.Add(btn);
-        stickCountTexts.Add(txt);
-    }
-
-    void OnBallButtonClicked() {
-        if (InteractionManager.Instance != null)
-            InteractionManager.Instance.SetBallTool();
-        UpdateButtonVisuals(ballSelected: true, selectedStickIndex: -1);
-    }
-
-    void OnStickButtonClicked(int index) {
-        if (index < 0 || index >= stickLengths.Length) return;
-        int length = stickLengths[index];
-        if (InteractionManager.Instance != null)
-            InteractionManager.Instance.SetStickTool(length);
-        UpdateButtonVisuals(ballSelected: false, selectedStickIndex: index);
-    }
-
-    void UpdateButtonVisuals(bool ballSelected, int selectedStickIndex) {
-        if (selectButton != null) {
-            var imgSel = selectButton.GetComponent<Image>();
-            if (imgSel) imgSel.color = normalColor;
-        }
-
-        if (ballButton != null) {
-            var img = ballButton.GetComponent<Image>();
-            if (img) img.color = ballSelected ? selectedColor : normalColor;
-        }
-
-        for (int i = 0; i < stickButtons.Count; i++) {
-            var img = stickButtons[i].GetComponent<Image>();
-            if (img) img.color = (i == selectedStickIndex) ? selectedColor : normalColor;
-        }
-    }
-
-    void OnSelectButtonClicked() {
-        if (InteractionManager.Instance != null)
-            InteractionManager.Instance.SetSelectTool();
-
-        if (selectButton != null) {
-            var imgSel = selectButton.GetComponent<Image>();
-            if (imgSel) imgSel.color = selectedColor;
-        }
-
-        if (ballButton != null) {
-            var img = ballButton.GetComponent<Image>();
-            if (img) img.color = normalColor;
-        }
-
-        for (int i = 0; i < stickButtons.Count; i++) {
-            var img = stickButtons[i].GetComponent<Image>();
-            if (img) img.color = normalColor;
-        }
+        stickFillImages.Add(barFill);
     }
 
     void Update() {
@@ -238,18 +167,20 @@ public class BuildToolbar : MonoBehaviour {
         else if (gm != null)
             ballCount = gm.allocatableBallCount;
 
-        if (ballCountText != null)
-            ballCountText.text = $"球: {ballCount}";
+        float ballFill = maxPerItem > 0 ? Mathf.Clamp01(ballCount / (float)maxPerItem) : 0f;
+        if (ballFillImage != null)
+            ballFillImage.fillAmount = ballFill;
 
-        for (int i = 0; i < stickLengths.Length && i < stickCountTexts.Count; i++) {
+        for (int i = 0; i < stickLengths.Length && i < stickFillImages.Count; i++) {
             int length = stickLengths[i];
             int count = 0;
             if (backpack != null)
                 count = backpack.GetStickCount(length);
             else if (gm != null)
-                count = gm.stickCount; // 无 Backpack 情况下只显示总数
+                count = gm.stickCount;
 
-            stickCountTexts[i].text = $"L={length}: {count}";
+            float fill = maxPerItem > 0 ? Mathf.Clamp01(count / (float)maxPerItem) : 0f;
+            stickFillImages[i].fillAmount = fill;
         }
     }
 }

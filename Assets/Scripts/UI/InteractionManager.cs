@@ -3,7 +3,7 @@ using UnityEngine;
 public class InteractionManager : MonoBehaviour {
     public static InteractionManager Instance;
 
-    enum BuildTool { Stick, Ball, Select }
+    enum BuildTool { Stick, Ball, Select, Delete }
 
     BuildTool currentTool = BuildTool.Stick;
     int currentStickLength = 2;
@@ -45,6 +45,11 @@ public class InteractionManager : MonoBehaviour {
         currentTool = BuildTool.Select;
     }
 
+    public void SetDeleteTool() {
+        currentTool = BuildTool.Delete;
+        ClearSelection();
+    }
+
     void Update() {
         if (GameManager.Instance != null) {
             if (GameManager.Instance.IsGamePaused)
@@ -52,6 +57,9 @@ public class InteractionManager : MonoBehaviour {
             if (GameManager.Instance.Phase != GameManager.GamePhase.Build)
                 return;
         }
+
+        if (RadialMenu.IsOpen)
+            return;
 
         if (Input.GetKeyDown(KeyCode.X)) {
             TryDeleteSelection();
@@ -114,29 +122,6 @@ public class InteractionManager : MonoBehaviour {
             return;
         }
 
-        if (Input.GetMouseButtonDown(1)) {
-            Vector2 mouseWorld = Camera.main.ScreenToWorldPoint(Input.mousePosition);
-            Collider2D[] hits = Physics2D.OverlapPointAll(mouseWorld);
-
-            Stick hitStick = null;
-            foreach (var col in hits) {
-                if (hitStick == null) hitStick = col.GetComponent<Stick>();
-            }
-
-            if (hitStick != null && !hitStick.FullyConnected) {
-                GameManager.Instance?.StoreStick(hitStick);
-                return;
-            }
-
-            if (hitStick == null && warehouse != null) {
-                if (warehouse.IsOpen)
-                    warehouse.Close();
-                else
-                    warehouse.Open();
-                return;
-            }
-        }
-
         if (Input.GetMouseButtonDown(0))
             BeginLeftPointer();
 
@@ -168,6 +153,18 @@ public class InteractionManager : MonoBehaviour {
 
             if (currentTool == BuildTool.Ball) {
                 TryInstallBallAtPosition(pendingMouseDownWorld);
+                return;
+            }
+
+            if (currentTool == BuildTool.Delete) {
+                if (pendingStick != null) {
+                    gm.ReturnStick();
+                    pendingStick.Delete();
+                } else if (pendingBall != null) {
+                    gm.ReturnAllocatableBall();
+                    pendingBall.Delete();
+                }
+                ClearSelection();
                 return;
             }
 

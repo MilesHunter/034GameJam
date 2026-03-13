@@ -5,6 +5,8 @@ using System.Collections.Generic;
 public class GameManager : MonoBehaviour {
     public static GameManager Instance;
 
+    const int MaxInventoryPerItem = 256;
+
     public enum GamePhase { Build, Simulate }
     public GamePhase Phase { get; private set; } = GamePhase.Build;
 
@@ -32,6 +34,9 @@ public class GameManager : MonoBehaviour {
         Instance = this;
         if (availableStickLengths.Count == 0)
             availableStickLengths.Add(2);
+
+        allocatableBallCount = Mathf.Clamp(allocatableBallCount, 0, MaxInventoryPerItem);
+        stickCount = Mathf.Clamp(stickCount, 0, MaxInventoryPerItem);
 
         ResetStickRefreshTimer();
         EnterBuild();
@@ -79,6 +84,7 @@ public class GameManager : MonoBehaviour {
     public void AddAllocatableBalls(int amount) {
         if (amount == 0) return;
         allocatableBallCount += amount;
+        allocatableBallCount = Mathf.Clamp(allocatableBallCount, 0, MaxInventoryPerItem);
         if (Backpack.Instance != null && amount > 0)
             Backpack.Instance.AddBalls(amount);
     }
@@ -96,6 +102,7 @@ public class GameManager : MonoBehaviour {
     public void AddGenericSticks(int amount) {
         if (amount == 0) return;
         stickCount += amount;
+        stickCount = Mathf.Clamp(stickCount, 0, MaxInventoryPerItem);
 
         if (Backpack.Instance != null && amount > 0) {
             int defaultLength = GetDefaultStickLength();
