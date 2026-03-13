@@ -85,6 +85,71 @@ public abstract class Ball : MonoBehaviour {
         UpdateVisual();
     }
 
+    /// <summary>
+    /// 返回除指定 Stick 之外，本球还连接了多少根其它 Stick。
+    /// 用于判定某个端点是否已经参与了更大的结构。
+    /// </summary>
+    public int GetOtherStickCount(Stick self) {
+        int count = 0;
+        for (int i = 0; i < connectedSticks.Count; i++) {
+            Stick s = connectedSticks[i];
+            if (s == null || s == self) continue;
+            count++;
+        }
+        return count;
+    }
+
+    /// <summary>
+    /// 在以当前球为中心的坐标系中，计算指定 Stick 的方向角（度）。
+    /// 约定：从本球指向 Stick 另一端的方向作为角度参考。
+    /// </summary>
+    public float GetStickAngleOnThisBall(Stick stick) {
+        if (stick == null)
+            return 0f;
+
+        Vector2 center = transform.position;
+
+        // 找出与本球相连的端点，以及另一端的位置
+        Transform otherEnd = null;
+        if (stick.endpointA == this) {
+            otherEnd = stick.EndB;
+        } else if (stick.endpointB == this) {
+            otherEnd = stick.EndA;
+        }
+
+        Vector2 dir;
+        if (otherEnd != null) {
+            dir = (Vector2)otherEnd.position - center;
+        } else {
+            // 兜底：若未能识别端点，则使用棒子中心方向
+            dir = (Vector2)stick.transform.position - center;
+        }
+
+        if (dir.sqrMagnitude < 0.0001f)
+            return 0f;
+
+        return Mathf.Atan2(dir.y, dir.x) * Mathf.Rad2Deg;
+    }
+
+    /// <summary>
+    /// 判断以 candidateAngleDeg 为方向的新棒子或现有棒子，
+    /// 与本球上其它已连接棒子之间的最小夹角是否大于给定阈值。
+    /// ignoreStick 用于在旋转自身时忽略当前这根棒子。
+    /// </summary>
+    public bool IsAngleAvailable(float candidateAngleDeg, Stick ignoreStick, float minDeltaDeg = 15f) {
+        for (int i = 0; i < connectedSticks.Count; i++) {
+            Stick s = connectedSticks[i];
+            if (s == null || s == ignoreStick) continue;
+
+            float existingAngle = GetStickAngleOnThisBall(s);
+            float delta = Mathf.Abs(Mathf.DeltaAngle(existingAngle, candidateAngleDeg));
+            if (delta < minDeltaDeg)
+                return false;
+        }
+
+        return true;
+    }
+
     // 由 GameManager 在 BFS 连通性检查后调用
     public virtual void OnConnectedToInitialChanged(bool newValue) {
         connectedToInitial = newValue;

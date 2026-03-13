@@ -57,10 +57,16 @@ public class MapWall : MonoBehaviour {
     }
 
     void OnValidate() {
-        // 在编辑器中修改 collider 或颜色时，尽量保持 Mesh 同步
-        EnsureRenderComponents();
-        RebuildMesh();
-        UpdateMaterialColor();
+#if UNITY_EDITOR
+        // 在编辑器中修改 collider 或颜色时，延迟一帧重建 Mesh，
+        // 避免在 OnValidate 调用链中触发 Unity 内部的 SendMessage 限制。
+        UnityEditor.EditorApplication.delayCall += () => {
+            if (this == null) return;
+            EnsureRenderComponents();
+            RebuildMesh();
+            UpdateMaterialColor();
+        };
+#endif
     }
 
     void EnsureRenderComponents() {

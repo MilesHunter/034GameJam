@@ -92,6 +92,14 @@ public class Stick : MonoBehaviour {
     bool storedKinematic;
     float storedGravityScale;
 
+    // 关节附近的体积阻挡：用于在物理模式下模拟多个棒子在同一球上互相“卡住”的效果。
+    // 这里用一圈小的圆形碰撞体近似，挂在每一端对应的棒子上，让物理引擎自行处理挤压。
+    const float pivotRingRadius = 0.3f;       // 小圆心到球心的大致半径
+    const float pivotColliderRadius = 0.014f; // 小圆半径再缩小一半，让最小夹角进一步减小
+
+    CircleCollider2D pivotColliderA;
+    CircleCollider2D pivotColliderB;
+
     // 由InteractionManager或WorldButton调用
     public void Initialize(Transform endATransform, Transform endBTransform) {
         endA = endATransform;
@@ -240,7 +248,28 @@ public class Stick : MonoBehaviour {
     }
 
     public bool CanDrag => endpointA == null && endpointB == null;
-    public bool CanRotate => (endpointA == null) != (endpointB == null);
+
+    /// <summary>
+    /// 是否允许当前棒子在建造阶段被旋转。
+    /// 规则：
+    /// - 至少有一端连接到球时才允许旋转；
+    /// - 当两端都连接到球且两个球上都还有其它棒子时，不允许旋转；
+    ///   其余情况（只有一端有球，或两端球中至多一个参与其它连接）允许旋转。
+    /// </summary>
+    public bool CanRotate {
+        get {
+            if (endpointA == null && endpointB == null)
+                return false;
+
+            int otherA = endpointA != null ? endpointA.GetOtherStickCount(this) : 0;
+            int otherB = endpointB != null ? endpointB.GetOtherStickCount(this) : 0;
+
+            if (endpointA != null && endpointB != null && otherA > 0 && otherB > 0)
+                return false;
+
+            return true;
+        }
+    }
 
     public void BeginDrag(Vector2 cursorWorld) {
         if (!CanDrag) return;
@@ -253,8 +282,33 @@ public class Stick : MonoBehaviour {
         if (!CanRotate) return;
         BeginManipulationCommon();
         isRotating = true;
-        if (endpointA != null) { rotateAnchor = endpointA; rotateAnchorIsA = true; }
-        else { rotateAnchor = endpointB; rotateAnchorIsA = false; }
+
+        // 根据两端球的连接情况选择旋转锚点：
+        // - 若只有一端有球，则围绕该端旋转；
+        // - 若两端都有球且只有一端参与其它连接，则围绕参与其它连接的一端旋转；
+        // - 若两端都有球但都未参与其它连接，则默认围绕 A 端旋转。
+        if (endpointA != null && endpointB == null) {
+            rotateAnchor = endpointA;
+            rotateAnchorIsA = true;
+        } else if (endpointB != null && endpointA == null) {
+            rotateAnchor = endpointB;
+            rotateAnchorIsA = false;
+        } else if (endpointA != null && endpointB != null) {
+            int otherA = endpointA.GetOtherStickCount(this);
+            int otherB = endpointB.GetOtherStickCount(this);
+
+            if (otherA > 0 && otherB == 0) {
+                rotateAnchor = endpointA;
+                rotateAnchorIsA = true;
+            } else if (otherB > 0 && otherA == 0) {
+                rotateAnchor = endpointB;
+                rotateAnchorIsA = false;
+            } else {
+                // 两端都没有其它连接或都一样多，默认围绕 A 端
+                rotateAnchor = endpointA;
+                rotateAnchorIsA = true;
+            }
+        }
     }
 
     public void EndManipulation() {
@@ -270,7 +324,7 @@ public class Stick : MonoBehaviour {
     }
 
     public void BeginRotateFromAnchor(Ball anchor) {
-        if (anchor == null) return;
+        if (anchor == null || !CanRotate) return;
         BeginManipulationCommon();
         isRotating = true;
         rotateAnchor = anchor;
@@ -309,10 +363,46 @@ public class Stick : MonoBehaviour {
 
         float anchorLocalY = rotateAnchorIsA ? 0.5f : -0.5f;
         float anchorOffset = anchorLocalY * transform.localScale.y;
+        // 先根据鼠标计算候选方向与角度，并暂时应用到 Transform，
+        // 再通过 Ball.GetStickAngleOnThisBall 计算与其它棒子的真实夹角，
+        // 若不满足最小 15 度要求，则回滚到上一帧姿态。
+        float directionAngle = Mathf.Atan2(dir.y, dir.x) * Mathf.Rad2Deg;
+
+        Vector3 oldPos = transform.position;
+        Quaternion oldRot = transform.rotation;
 
         transform.position = (Vector3)(anchor - dir * anchorOffset);
-        float angle = Mathf.Atan2(dir.y, dir.x) * Mathf.Rad2Deg - 90f;
+        float angle = directionAngle - 90f;
         transform.rotation = Quaternion.Euler(0, 0, angle);
+
+        Ball anchorBall = rotateAnchor;
+        if (anchorBall != null) {
+            float candidateAngle = anchorBall.GetStickAngleOnThisBall(this);
+            if (!anchorBall.IsAngleAvailable(candidateAngle, this, 15f)) {
+                transform.position = oldPos;
+                transform.rotation = oldRot;
+                return;
+            }
+        }
+
+        // 在建造模式下旋转时，如果另一端的球没有参与其它连接，
+        // 让它跟随棒子一起转动，保持建筑逻辑上的刚性一体。
+        Ball otherBall = null;
+        Transform otherEnd = null;
+        if (rotateAnchorIsA) {
+            otherBall = endpointB;
+            otherEnd = endB;
+        } else {
+            otherBall = endpointA;
+            otherEnd = endA;
+        }
+
+        if (otherBall != null && otherEnd != null) {
+            int otherConnections = otherBall.GetOtherStickCount(this);
+            if (otherConnections == 0) {
+                otherBall.transform.position = otherEnd.position;
+            }
+        }
 
     }
 
@@ -346,11 +436,28 @@ public class Stick : MonoBehaviour {
     }
 
     void EstablishConnection(Transform end, ref Ball endpoint, int jointIndex, Ball ball) {
+        if (end != null && ball != null) {
+            // 角度限制：以“本球指向另一端”的方向作为角度参考，
+            // 与 Ball.GetStickAngleOnThisBall 保持一致。
+            Transform otherEnd = end == endA ? endB : endA;
+            if (otherEnd != null) {
+                Vector2 center = ball.transform.position;
+                Vector2 dir = (Vector2)otherEnd.position - center;
+                if (dir.sqrMagnitude > 0.0001f) {
+                    float angle = Mathf.Atan2(dir.y, dir.x) * Mathf.Rad2Deg;
+                    if (!ball.IsAngleAvailable(angle, this, 15f)) {
+                        return; // 角度过小，拒绝建立新连接
+                    }
+                }
+            }
+        }
+
         endpoint = ball;
         ball.AddConnection(this);
 
         AlignEndAndBall(end, ball);
         CreateJointToBall(end, jointIndex, ball);
+        SetupPivotColliderForEndpoint(end, ball);
         UpdateVisual();
     }
 
@@ -359,15 +466,68 @@ public class Stick : MonoBehaviour {
         int idx = isA ? 0 : 1;
         if (joints[idx] != null) return;
 
+        Transform thisEnd = isA ? endA : endB;
+        Transform otherEndLocal = isA ? endB : endA;
+        if (otherEndLocal != null) {
+            Vector2 center = ball.transform.position;
+            Vector2 dir = (Vector2)otherEndLocal.position - center;
+            if (dir.sqrMagnitude > 0.0001f) {
+                float angle = Mathf.Atan2(dir.y, dir.x) * Mathf.Rad2Deg;
+                if (!ball.IsAngleAvailable(angle, this, 15f)) {
+                    return; // 角度过小，拒绝建立新连接
+                }
+            }
+        }
+
         if (isA) endpointA = ball; else endpointB = ball;
         ball.AddConnection(this);
+        if (thisEnd == null) return;
 
-        Transform end = isA ? endA : endB;
-        if (end == null) return;
-
-        AlignEndAndBall(end, ball);
-        CreateJointToBall(end, idx, ball);
+        AlignEndAndBall(thisEnd, ball);
+        CreateJointToBall(thisEnd, idx, ball);
+        SetupPivotColliderForEndpoint(thisEnd, ball);
         UpdateVisual();
+    }
+
+    void SetupPivotColliderForEndpoint(Transform end, Ball ball) {
+        if (end == null || ball == null)
+            return;
+
+        // 以“球心 → 此棒另一端”方向为基准，在球周围 pivotRingRadius 处放一个小圆。
+        Transform otherEnd = end == endA ? endB : endA;
+        if (otherEnd == null)
+            return;
+
+        Vector2 center = ball.transform.position;
+        Vector2 dir = (Vector2)otherEnd.position - center;
+        if (dir.sqrMagnitude < 0.0001f)
+            return;
+        dir.Normalize();
+
+        Vector2 pivotWorld = center + dir * pivotRingRadius;
+
+        bool isA = (end == endA);
+        CircleCollider2D col = isA ? pivotColliderA : pivotColliderB;
+        if (col == null) {
+            GameObject go = new GameObject(isA ? "PivotColliderA" : "PivotColliderB");
+            go.transform.SetParent(transform, worldPositionStays: false);
+            col = go.AddComponent<CircleCollider2D>();
+            col.radius = pivotColliderRadius;
+
+            // 避免与本棒子的主碰撞体和当前球发生碰撞，只与其他棒子的 pivot 发生碰撞。
+            if (TryGetComponent(out Collider2D mainCol)) {
+                Physics2D.IgnoreCollision(col, mainCol, true);
+            }
+            if (ball.TryGetComponent(out Collider2D ballCol)) {
+                Physics2D.IgnoreCollision(col, ballCol, true);
+            }
+
+            if (isA) pivotColliderA = col; else pivotColliderB = col;
+        }
+
+        // 放到正确的世界坐标上，再回写本地变换。
+        col.transform.position = pivotWorld;
+        col.enabled = true;
     }
 
     void CreateJointToBall(Transform end, int jointIndex, Ball ball) {
@@ -449,7 +609,7 @@ public class Stick : MonoBehaviour {
         else if (connected == 1)
             c *= 1.0f;
         else
-            c *= 1.2f;
+            c *= 1.4f; // 两端都连接的棒子颜色更深，便于一眼看出已被固定
 
         sr.color = c;
     }
