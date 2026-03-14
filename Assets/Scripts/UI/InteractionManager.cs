@@ -56,6 +56,8 @@ public class InteractionManager : MonoBehaviour {
                 return;
             if (GameManager.Instance.Phase != GameManager.GamePhase.Build)
                 return;
+            if (!GameManager.Instance.CanPlaceMoreBuildPieces() && stickBeingPlaced == null && !isManipulating)
+                return;
         }
 
         if (RadialMenu.IsOpen)
@@ -78,6 +80,7 @@ public class InteractionManager : MonoBehaviour {
                 stickBeingPlaced = null;
 
                 if (s != null) {
+                    var gm = GameManager.Instance;
                     // 在确认放置前，先检查是否与地图墙体冲突
                     if (s.IsPlacementBlockedByWalls()) {
                         // 视为本次放置无效：销毁棒子并归还库存
@@ -87,6 +90,8 @@ public class InteractionManager : MonoBehaviour {
                     }
 
                     s.ConfirmPlacementPose();
+
+                    gm?.RegisterPlacedBuildPiece();
 
                     Ball anchor = s.endpointA != null ? s.endpointA : s.endpointB;
                     manipulatingStick = s;
@@ -152,7 +157,8 @@ public class InteractionManager : MonoBehaviour {
                 return;
 
             if (currentTool == BuildTool.Ball) {
-                TryInstallBallAtPosition(pendingMouseDownWorld);
+                if (gm.CanPlaceMoreBuildPieces())
+                    TryInstallBallAtPosition(pendingMouseDownWorld);
                 return;
             }
 
@@ -193,6 +199,9 @@ public class InteractionManager : MonoBehaviour {
                 }
                 return;
             }
+
+            if (!gm.CanPlaceMoreBuildPieces())
+                return;
 
             Ball anchor = gm.FindNearestBall(pendingMouseDownWorld);
             if (anchor == null)
@@ -250,7 +259,11 @@ public class InteractionManager : MonoBehaviour {
         if (bestStick == null || bestEnd == null)
             return;
 
-        gm.TryInstallBallOnStickFreeEnd(bestStick);
+        if (!gm.CanPlaceMoreBuildPieces())
+            return;
+
+        if (gm.TryInstallBallOnStickFreeEnd(bestStick))
+            gm.RegisterPlacedBuildPiece();
     }
 
     void TryDeleteSelection() {

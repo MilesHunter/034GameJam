@@ -28,6 +28,13 @@ public class GameManager : MonoBehaviour {
 
     float stickRefreshTimer;
 
+    [Header("Build Limits")]
+    [SerializeField] int maxBuildPiecesPerPause = 8;
+    [SerializeField] float buildPhaseCooldownSeconds = 2f;
+
+    int buildPiecesPlacedThisPause;
+    float buildPhaseCooldownRemaining;
+
     public bool IsPhysicsPaused { get; private set; }
     public bool IsGamePaused { get; private set; }
 
@@ -88,7 +95,10 @@ public class GameManager : MonoBehaviour {
             TogglePhase();
 
         if (autoRefreshSticks)
-            TickStickRefresh();
+             TickStickRefresh();
+
+        if (buildPhaseCooldownRemaining > 0f)
+            buildPhaseCooldownRemaining -= Time.deltaTime;
     }
 
     void TickStickRefresh() {
@@ -164,15 +174,21 @@ public class GameManager : MonoBehaviour {
     }
 
     void TogglePhase() {
-        if (Phase == GamePhase.Build)
+        if (Phase == GamePhase.Build) {
             EnterSimulate();
-        else
+            buildPhaseCooldownRemaining = buildPhaseCooldownSeconds;
+        } else {
+            if (buildPhaseCooldownRemaining > 0f)
+                return;
             EnterBuild();
+        }
     }
 
     void EnterBuild() {
         Phase = GamePhase.Build;
         SetPhysicsPaused(true);
+
+        buildPiecesPlacedThisPause = 0;
 
         foreach (Stick stick in FindObjectsByType<Stick>(FindObjectsSortMode.None)) {
             if (stick == null || stick.rb == null) continue;
@@ -216,6 +232,20 @@ public class GameManager : MonoBehaviour {
                 rb.gravityScale = 1f;
             }
         }
+    }
+
+    public bool CanPlaceMoreBuildPieces() {
+        if (Phase != GamePhase.Build)
+            return false;
+        return buildPiecesPlacedThisPause < maxBuildPiecesPerPause;
+    }
+
+    public void RegisterPlacedBuildPiece() {
+        if (Phase != GamePhase.Build)
+            return;
+        if (buildPiecesPlacedThisPause >= maxBuildPiecesPerPause)
+            return;
+        buildPiecesPlacedThisPause++;
     }
 
     void ToggleGamePause() {
