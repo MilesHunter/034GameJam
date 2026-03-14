@@ -95,7 +95,7 @@ public class Stick : MonoBehaviour {
     // 关节附近的体积阻挡：用于在物理模式下模拟多个棒子在同一球上互相“卡住”的效果。
     // 这里用一圈小的圆形碰撞体近似，挂在每一端对应的棒子上，让物理引擎自行处理挤压。
     const float pivotRingRadius = 0.3f;       // 小圆心到球心的大致半径
-    const float pivotColliderRadius = 0.014f; // 小圆半径再缩小一半，让最小夹角进一步减小
+    const float pivotColliderRadius = 0.039f;
 
     CircleCollider2D pivotColliderA;
     CircleCollider2D pivotColliderB;
@@ -165,7 +165,7 @@ public class Stick : MonoBehaviour {
         rb.angularVelocity = 0f;
 
         if (anchorBall != null)
-            AttachEndpointToBall(isA: true, ball: anchorBall);
+            AttachEndpointToBall(isA: false, ball: anchorBall);
 
         Vector2 anchorPos = anchorBall != null
             ? (Vector2)anchorBall.transform.position
@@ -228,21 +228,23 @@ public class Stick : MonoBehaviour {
         if (placementAnchor == null) { FinishPlacement(); return; }
 
         Vector2 cursor = Camera.main.ScreenToWorldPoint(Input.mousePosition);
-        Vector2 anchor = placementAnchor.transform.position;
-        Vector2 diff = cursor - anchor;
-
-        float halfLen = transform.localScale.y * 0.5f;
+        Vector2 ballPos = placementAnchor.transform.position;
+        Vector2 diff = cursor - ballPos;
 
         const float minDirDistance = 0.05f;
-        Vector2 dir;
-        if (diff.sqrMagnitude > minDirDistance * minDirDistance) {
-            dir = diff.normalized;
-            lastPlacementDir = dir;
-        } else {
-            dir = lastPlacementDir;
-        }
+        if (diff.sqrMagnitude > minDirDistance * minDirDistance)
+            lastPlacementDir = diff.normalized;
 
-        transform.position = (Vector3)(anchor + dir * halfLen);
+        Vector2 dir = lastPlacementDir;
+
+        float yE = endB != null ? endB.localPosition.y : -0.5f;
+        float sY = transform.localScale.y;
+
+        float radius = GetBallWorldRadius(placementAnchor);
+        Vector2 anchorOnBall = ballPos + dir * radius;
+        Vector2 center = anchorOnBall - dir * (yE * sY);
+
+        transform.position = center;
         float angle = Mathf.Atan2(dir.y, dir.x) * Mathf.Rad2Deg - 90f;
         transform.rotation = Quaternion.Euler(0, 0, angle);
     }
@@ -355,14 +357,22 @@ public class Stick : MonoBehaviour {
             return;
         }
 
-        Vector2 anchor = rotateAnchor.transform.position;
-        Vector2 dir = rotateAnchorIsA ? (anchor - cursor) : (cursor - anchor);
-        if (dir.sqrMagnitude < 0.0025f)
+        Ball anchorBall = rotateAnchor;
+        Vector2 ballPos = anchorBall.transform.position;
+        Vector2 diff = cursor - ballPos;
+        if (diff.sqrMagnitude < 0.0025f)
             return;
-        dir.Normalize();
 
-        float anchorLocalY = rotateAnchorIsA ? 0.5f : -0.5f;
-        float anchorOffset = anchorLocalY * transform.localScale.y;
+        Vector2 dir = diff.normalized;
+
+        Transform anchorEnd = rotateAnchorIsA ? endA : endB;
+        float anchorLocalY = anchorEnd != null ? anchorEnd.localPosition.y : (rotateAnchorIsA ? 0.5f : -0.5f);
+        float sY = transform.localScale.y;
+
+        float radius = GetBallWorldRadius(anchorBall);
+        Vector2 anchorOnBall = ballPos + dir * radius;
+        Vector2 center = anchorOnBall - dir * (anchorLocalY * sY);
+
         // 先根据鼠标计算候选方向与角度，并暂时应用到 Transform，
         // 再通过 Ball.GetStickAngleOnThisBall 计算与其它棒子的真实夹角，
         // 若不满足最小 15 度要求，则回滚到上一帧姿态。
@@ -371,36 +381,16 @@ public class Stick : MonoBehaviour {
         Vector3 oldPos = transform.position;
         Quaternion oldRot = transform.rotation;
 
-        transform.position = (Vector3)(anchor - dir * anchorOffset);
+        transform.position = center;
         float angle = directionAngle - 90f;
         transform.rotation = Quaternion.Euler(0, 0, angle);
 
-        Ball anchorBall = rotateAnchor;
         if (anchorBall != null) {
             float candidateAngle = anchorBall.GetStickAngleOnThisBall(this);
             if (!anchorBall.IsAngleAvailable(candidateAngle, this, 15f)) {
                 transform.position = oldPos;
                 transform.rotation = oldRot;
                 return;
-            }
-        }
-
-        // 在建造模式下旋转时，如果另一端的球没有参与其它连接，
-        // 让它跟随棒子一起转动，保持建筑逻辑上的刚性一体。
-        Ball otherBall = null;
-        Transform otherEnd = null;
-        if (rotateAnchorIsA) {
-            otherBall = endpointB;
-            otherEnd = endB;
-        } else {
-            otherBall = endpointA;
-            otherEnd = endA;
-        }
-
-        if (otherBall != null && otherEnd != null) {
-            int otherConnections = otherBall.GetOtherStickCount(this);
-            if (otherConnections == 0) {
-                otherBall.transform.position = otherEnd.position;
             }
         }
 
@@ -546,9 +536,26 @@ public class Stick : MonoBehaviour {
 
     void AlignEndAndBall(Transform end, Ball ball) {
         if (end == null || ball == null) return;
+
+        // 目标效果：棒子端点贴在球表面，而不是球心。
+        // 1. 以当前端点相对于球心的方向为基准；
+        // 2. 计算球在世界空间下的半径；
+        // 3. 将端点放到「球心 + 方向 * 半径」的位置。
         Vector2 ballPos = ball.transform.position;
         Vector2 endPos = end.position;
-        Vector2 delta = ballPos - endPos;
+
+        Vector2 dir = endPos - ballPos;
+        if (dir.sqrMagnitude < 0.0001f) {
+            // 若方向几乎为 0（极端情况），回退到原来的简单对齐逻辑，避免 NaN。
+            Vector2 fallbackDelta = ballPos - endPos;
+            transform.position += (Vector3)fallbackDelta;
+            return;
+        }
+
+        dir.Normalize();
+        float radius = GetBallWorldRadius(ball);
+        Vector2 targetEndPos = ballPos + dir * radius;
+        Vector2 delta = targetEndPos - endPos;
         transform.position += (Vector3)delta;
     }
 
