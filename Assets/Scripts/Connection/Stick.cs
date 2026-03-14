@@ -165,7 +165,7 @@ public class Stick : MonoBehaviour {
         rb.angularVelocity = 0f;
 
         if (anchorBall != null)
-            AttachEndpointToBall(isA: false, ball: anchorBall);
+            AttachEndpointToBall(isA: true, ball: anchorBall);
 
         Vector2 anchorPos = anchorBall != null
             ? (Vector2)anchorBall.transform.position
