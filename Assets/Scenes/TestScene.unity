@@ -451,8 +451,8 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   allocatableBallCount: 5
   stickCount: 10
-  initialStickLengths: 010000000200000003000000
-  availableStickLengths: 0400000005000000
+  initialStickLengths: 
+  availableStickLengths: 010000000200000003000000
   autoRefreshSticks: 1
   stickRefreshMinSeconds: 2
   stickRefreshMaxSeconds: 4
