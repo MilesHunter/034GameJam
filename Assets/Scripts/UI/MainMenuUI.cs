@@ -60,13 +60,13 @@ public class MainMenuUI : MonoBehaviour {
         var go = new GameObject("Title");
         go.transform.SetParent(canvas.transform, false);
         var rt = go.AddComponent<RectTransform>();
-        rt.anchorMin = new Vector2(0.5f, 0.65f);
-        rt.anchorMax = new Vector2(0.5f, 0.65f);
+        rt.anchorMin = new Vector2(0.5f, 0.5f);
+        rt.anchorMax = new Vector2(0.5f, 0.5f);
         rt.pivot     = new Vector2(0.5f, 0.5f);
-        rt.anchoredPosition = Vector2.zero;
+        rt.anchoredPosition = new Vector2(0f, 130f);
         rt.sizeDelta = new Vector2(600f, 100f);
         var txt = go.AddComponent<Text>();
-        txt.text      = "034 Game Jam";
+        txt.text      = "Magnetic Bar";
         txt.fontSize  = 54;
         txt.fontStyle = FontStyle.Bold;
         txt.color     = new Color(0.95f, 0.92f, 0.85f, 1f);
@@ -74,14 +74,15 @@ public class MainMenuUI : MonoBehaviour {
         txt.font      = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
     }
 
-    // 三个按钮
+    // 三个按钮，以屏幕中心为基准，向上偏移留给标题
     void BuildButtons() {
-        float[] yOffsets = { 0f, -70f, -140f };
+        // 以 (0.5, 0.5) 为锚，在屏幕中心附近垂直排列
+        float[] yOffsets = { -20f, -88f, -156f };
         string[] labels  = { "开始游戏", "教程", "退出游戏" };
 
         for (int i = 0; i < 3; i++) {
             int idx = i;
-            var btn = CreateButton(labels[i], new Vector2(0f, 0.42f),
+            var btn = CreateButton(labels[i], new Vector2(0.5f, 0.5f),
                                    new Vector2(0f, yOffsets[i]));
             btn.onClick.AddListener(() => OnButtonClick(idx));
         }

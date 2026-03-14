@@ -32,8 +32,7 @@ public class BuildToolbar : MonoBehaviour {
     const float SlotH  = 76f;
     // 图标区域（顶部）
     const float IconSize   = 24f;   // 圆形球图标边长
-    const float StickIconW = 6f;    // 棒图标宽（细矩形）
-    const float StickIconH = 30f;   // 棒图标高
+    const float StickIconW = 6f;    // 棒图标宽（细矩形，高度按 length 动态计算）
     const float IconOffsetFromTop = 10f;
     // 进度条（底部）
     const float BarW = 68f;
@@ -156,8 +155,9 @@ public class BuildToolbar : MonoBehaviour {
     void CreateStickSlot(int length) {
         RectTransform slot = CreateSlotContainer($"StickSlot_L{length}");
 
-        // 细矩形图标，旋转 45°
-        RectTransform iconRt = CreateIconRect(slot, "Icon", StickIconW, StickIconH);
+        // 高度随长度缩放：length=1→14px, 2→20px, 4→32px, 6→44px
+        float iconH = 8f + length * 6f;
+        RectTransform iconRt = CreateIconRect(slot, "Icon", StickIconW, iconH);
         Image icon = iconRt.gameObject.AddComponent<Image>();
         icon.sprite = GameManager.MakeRectSprite();
         icon.color  = StickIconColor;

@@ -10,6 +10,12 @@ public class RadialMenu : MonoBehaviour {
     [SerializeField] float radius = 120f;
     [SerializeField] float iconSize = 36f;
 
+    [Header("图标贴图（留空则使用默认色块）")]
+    [SerializeField] Sprite ballSprite;
+    [SerializeField] Sprite stickSprite;
+    [SerializeField] Sprite deleteSprite;
+    [SerializeField] Sprite noneModeSprite;
+
     Canvas canvas;
     RectTransform root;
     readonly List<Button> buttons = new List<Button>();
@@ -144,26 +150,29 @@ public class RadialMenu : MonoBehaviour {
     Sprite GetSpriteForItem(ItemConfig config) {
         switch (config.type) {
             case ItemType.Ball:
-                return GameManager.MakeCircleSprite();
+                return ballSprite != null ? ballSprite : GameManager.MakeCircleSprite();
             case ItemType.StickLength:
+                return stickSprite != null ? stickSprite : GameManager.MakeRectSprite();
             case ItemType.Delete:
+                return deleteSprite != null ? deleteSprite : GameManager.MakeRectSprite();
             case ItemType.NoneMode:
-                return GameManager.MakeRectSprite();
+                return noneModeSprite != null ? noneModeSprite : GameManager.MakeRectSprite();
             default:
                 return GameManager.MakeRectSprite();
         }
     }
 
+    // 自定义贴图时统一白色；默认色块时保持原色
     Color GetColorForItem(ItemConfig config) {
         switch (config.type) {
             case ItemType.Ball:
-                return new Color(0.8f, 0.4f, 0.4f, 0.9f);
+                return ballSprite != null ? Color.white : new Color(0.8f, 0.4f, 0.4f, 0.9f);
             case ItemType.StickLength:
-                return new Color(0.6f, 0.6f, 0.9f, 0.9f);
+                return stickSprite != null ? Color.white : new Color(0.6f, 0.6f, 0.9f, 0.9f);
             case ItemType.Delete:
-                return new Color(0.9f, 0.3f, 0.3f, 0.9f);
+                return deleteSprite != null ? Color.white : new Color(0.9f, 0.3f, 0.3f, 0.9f);
             case ItemType.NoneMode:
-                return new Color(0.3f, 0.3f, 0.3f, 0.8f);
+                return noneModeSprite != null ? Color.white : new Color(0.3f, 0.3f, 0.3f, 0.8f);
             default:
                 return Color.white;
         }
