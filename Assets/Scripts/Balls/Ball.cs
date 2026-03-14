@@ -57,6 +57,8 @@ public abstract class Ball : MonoBehaviour {
 
     public bool CanConnect() => currentConnections < connectionLimit;
 
+    public virtual bool CanServeAsStickAnchor => true;
+
     public void AddConnection(Stick stick) {
         if (connectedSticks.Contains(stick)) return;
         currentConnections++;

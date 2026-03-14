@@ -20,4 +20,7 @@ public class FunctionBall : Ball {
             Debug.Log($"[FunctionBall] 解锁连接棒长度: {unlockStickLength}");
         }
     }
+
+    // 功能类球同样视为特殊连接球，不允许玩家直接以其为锚点生成新棒子。
+    public override bool CanServeAsStickAnchor => false;
 }

@@ -437,6 +437,13 @@ public class GameManager : MonoBehaviour {
         float best = maxDistance * maxDistance;
 
         foreach (Ball ball in FindObjectsByType<Ball>(FindObjectsSortMode.None)) {
+            if (ball == null)
+                continue;
+
+            // 只允许可作为建造锚点的球参与鼠标选取
+            if (!ball.CanServeAsStickAnchor)
+                continue;
+
             float d = ((Vector2)ball.transform.position - mousePos).sqrMagnitude;
             if (d < best) {
                 best = d;

@@ -94,8 +94,8 @@ public class Stick : MonoBehaviour {
 
     // 关节附近的体积阻挡：用于在物理模式下模拟多个棒子在同一球上互相“卡住”的效果。
     // 这里用一圈小的圆形碰撞体近似，挂在每一端对应的棒子上，让物理引擎自行处理挤压。
-    const float pivotRingRadius = 0.3f;       // 小圆心到球心的大致半径
-    const float pivotColliderRadius = 0.039f;
+    const float pivotRingRadiusFactor = 1.3f;
+    const float minPivotAngleDeg = 15f;
 
     CircleCollider2D pivotColliderA;
     CircleCollider2D pivotColliderB;
@@ -483,7 +483,6 @@ public class Stick : MonoBehaviour {
         if (end == null || ball == null)
             return;
 
-        // 以“球心 → 此棒另一端”方向为基准，在球周围 pivotRingRadius 处放一个小圆。
         Transform otherEnd = end == endA ? endB : endA;
         if (otherEnd == null)
             return;
@@ -494,7 +493,13 @@ public class Stick : MonoBehaviour {
             return;
         dir.Normalize();
 
-        Vector2 pivotWorld = center + dir * pivotRingRadius;
+        float ballRadius = GetBallWorldRadius(ball);
+        float ringRadius = ballRadius * pivotRingRadiusFactor;
+
+        float halfAngleRad = minPivotAngleDeg * 0.5f * Mathf.Deg2Rad;
+        float colliderRadius = ringRadius * Mathf.Sin(halfAngleRad);
+
+        Vector2 pivotWorld = center + dir * ringRadius;
 
         bool isA = (end == endA);
         CircleCollider2D col = isA ? pivotColliderA : pivotColliderB;
@@ -502,7 +507,6 @@ public class Stick : MonoBehaviour {
             GameObject go = new GameObject(isA ? "PivotColliderA" : "PivotColliderB");
             go.transform.SetParent(transform, worldPositionStays: false);
             col = go.AddComponent<CircleCollider2D>();
-            col.radius = pivotColliderRadius;
 
             // 避免与本棒子的主碰撞体和当前球发生碰撞，只与其他棒子的 pivot 发生碰撞。
             if (TryGetComponent(out Collider2D mainCol)) {
@@ -515,7 +519,7 @@ public class Stick : MonoBehaviour {
             if (isA) pivotColliderA = col; else pivotColliderB = col;
         }
 
-        // 放到正确的世界坐标上，再回写本地变换。
+        col.radius = colliderRadius;
         col.transform.position = pivotWorld;
         col.enabled = true;
     }

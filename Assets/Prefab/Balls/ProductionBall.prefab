@@ -139,6 +139,6 @@ MonoBehaviour:
   connectionLimit: 24
   currentConnections: 0
   connectedSticks: []
-  productionInterval: 5
+  productionInterval: 3
   ballOutput: 2
   stickOutput: 3

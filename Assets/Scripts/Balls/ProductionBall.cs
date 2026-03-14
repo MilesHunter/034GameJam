@@ -36,4 +36,6 @@ public class ProductionBall : Ball {
         }
         productionCoroutine = null;
     }
+
+    public override bool CanServeAsStickAnchor => false;
 }
